@@ -64,7 +64,7 @@ export default function RegisterPage() {
             required
             value={username}
             onChange={(e) => setUsername(e.target.value.toLowerCase())}
-            placeholder="xrezzky"
+            placeholder="username"
             className="w-full rounded-lg bg-surface2 border border-border px-3 py-2 text-sm focus-ring"
           />
           <p className="text-xs text-muted mt-1">mediary.app/u/{username || 'yourname'}</p>

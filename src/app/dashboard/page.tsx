@@ -8,8 +8,8 @@ import { UploadModal } from '@/components/upload-modal';
 import { StorageBar } from '@/components/storage-bar';
 import { FileIcon } from '@/components/file-icon';
 import { useAuth } from '@/components/auth-provider';
-import { apiFetch } from '@/lib/api-client';
-import { formatBytes } from '@/lib/utils';
+import { apiFetch, ApiError } from '@/lib/api-client';
+import { formatBytes, isValidUsername } from '@/lib/utils';
 import type { FileDoc } from '@/types';
 
 export default function DashboardPage() {
@@ -40,8 +40,12 @@ export default function DashboardPage() {
     await loadRecent();
   }
 
-  if (loading || !profile) {
+  if (loading || !firebaseUser) {
     return <div className="min-h-screen flex items-center justify-center text-muted">Loading…</div>;
+  }
+
+  if (!profile) {
+    return <CreateProfile onDone={refreshProfile} />;
   }
 
   const publicCount = 0; // computed on Files page; kept light here
@@ -105,5 +109,55 @@ export default function DashboardPage() {
         <UploadModal folderId={null} onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />
       )}
     </AppShell>
+  );
+}
+
+
+// Shown when a user is signed in but has no Firestore profile yet (e.g. the
+// profile write failed during registration, or they signed in with Google).
+function CreateProfile({ onDone }: { onDone: () => Promise<void> }) {
+  const [username, setUsername] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!isValidUsername(username)) {
+      setError('Usernames must be 3-20 characters: lowercase letters, numbers, underscore.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiFetch('/api/users', { method: 'POST', body: JSON.stringify({ username }) });
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not create your profile.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-5">
+      <form onSubmit={submit} className="w-full max-w-sm space-y-3">
+        <h1 className="text-lg font-semibold">Finish setting up your profile</h1>
+        <input
+          required
+          value={username}
+          onChange={(e) => setUsername(e.target.value.toLowerCase())}
+          placeholder="username"
+          className="w-full rounded-lg bg-surface2 border border-border px-3 py-2 text-sm focus-ring"
+        />
+        {error && <p className="text-sm text-danger">{error}</p>}
+        <button
+          type="submit"
+          disabled={busy}
+          className="w-full rounded-lg bg-accent text-accent-fg font-medium py-2.5 text-sm disabled:opacity-60 focus-ring"
+        >
+          {busy ? 'Saving…' : 'Create profile'}
+        </button>
+      </form>
+    </div>
   );
 }
