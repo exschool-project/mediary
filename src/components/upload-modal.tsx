@@ -2,8 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { X, UploadCloud } from 'lucide-react';
-import { ref as storageRef, uploadBytesResumable } from 'firebase/storage';
-import { storage } from '@/lib/firebase/client';
+import { upload } from '@vercel/blob/client';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
 
@@ -31,6 +30,7 @@ export function UploadModal({
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   async function uploadOne(file: File, relativePath: string | null) {
+    let reservedId: string | null = null;
     const key = `${file.name}-${file.size}-${Math.random()}`;
     setItems((prev) => [...prev, { key, name: relativePath ?? file.name, size: file.size, progress: 0, status: 'pending' }]);
 
@@ -52,25 +52,30 @@ export function UploadModal({
         }
       );
 
+      reservedId = fileId;
       setItems((prev) => prev.map((i) => (i.key === key ? { ...i, status: 'uploading' } : i)));
 
-      await new Promise<void>((resolve, reject) => {
-        const task = uploadBytesResumable(storageRef(storage, storagePath), file);
-        task.on(
-          'state_changed',
-          (snap) => {
-            const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-            setItems((prev) => prev.map((i) => (i.key === key ? { ...i, progress } : i)));
-          },
-          (err) => reject(err),
-          () => resolve()
-        );
+      await upload(storagePath, file, {
+        access: 'private',
+        handleUploadUrl: '/api/files/upload/token',
+        clientPayload: fileId,
+        contentType: file.type || 'application/octet-stream',
+        multipart: file.size > 20 * 1024 * 1024,
+        onUploadProgress: ({ percentage }) => {
+          const progress = Math.round(percentage);
+          setItems((prev) => prev.map((i) => (i.key === key ? { ...i, progress } : i)));
+        },
       });
 
       await apiFetch('/api/files/upload/complete', { method: 'POST', body: JSON.stringify({ fileId }) });
       setItems((prev) => prev.map((i) => (i.key === key ? { ...i, status: 'done', progress: 100 } : i)));
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Upload failed.';
+      const message =
+        err instanceof ApiError ? err.message : err instanceof Error && err.message ? `Upload failed: ${err.message}` : 'Upload failed.';
+      // Release the quota reserved by /api/files/upload if we never finished.
+      if (reservedId) {
+        apiFetch('/api/files/upload/abort', { method: 'POST', body: JSON.stringify({ fileId: reservedId }) }).catch(() => {});
+      }
       setItems((prev) => prev.map((i) => (i.key === key ? { ...i, status: 'error', error: message } : i)));
     }
   }

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { adminDb, adminBucket } from '@/lib/firebase/admin';
+import { adminDb } from '@/lib/firebase/admin';
+import { signedDownloadUrl } from '@/lib/server/blob';
 import { resolveDownloadToken } from '@/lib/server/resolve-download';
 import { writeAudit } from '@/lib/server/audit';
 
@@ -98,11 +99,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     return NextResponse.json({ error: 'This link has already been used.' }, { status: 410 });
   }
 
-  const [signedUrl] = await adminBucket.file(file.storagePath).getSignedUrl({
-    action: 'read',
-    expires: Date.now() + 60 * 1000, // 60 seconds
-    responseDisposition: `attachment; filename="${file.name.replace(/"/g, '')}"`,
-  });
+  const signedUrl = await signedDownloadUrl(file.storagePath);
 
   await writeAudit(file.ownerId, 'file.download', file.id, { via: resolution.kind });
 

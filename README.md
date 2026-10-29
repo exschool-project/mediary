@@ -5,7 +5,7 @@ Store. Share. Control.
 Mediary is a file hosting and sharing platform: upload files or folders, keep
 them private, publish them on your public profile, or hand out a share link
 with its own expiration, password, and download limit. Built with Next.js
-(App Router), Firebase (Auth, Firestore, Storage), and deployed on Vercel.
+(App Router), Firebase (Auth, Firestore) + Vercel Blob (files), and deployed on Vercel.
 
 ---
 
@@ -14,7 +14,7 @@ with its own expiration, password, and download limit. Built with Next.js
 - **Frontend:** Next.js 14 (App Router) + React 18 + TypeScript + Tailwind CSS
 - **Auth:** Firebase Authentication (email/password, optional Google OAuth)
 - **Database:** Firestore
-- **File storage:** Firebase Storage
+- **File storage:** Vercel Blob (private store)
 - **Server logic:** Next.js API routes using the Firebase Admin SDK
 - **Deployment:** Vercel
 
@@ -59,7 +59,7 @@ npm run dev
    **Google** too if you want the optional OAuth button.
 3. **Firestore Database** → Create database (production mode is fine — our
    rules deny all client access anyway).
-4. **Storage** → Get started, using the default bucket.
+4. (Storage is NOT used — files live in Vercel Blob, see section 5.)
 5. **Project settings → General → Your apps** → add a **Web app**. Copy the
    `apiKey`, `authDomain`, `projectId`, `storageBucket`,
    `messagingSenderId`, `appId` into the `NEXT_PUBLIC_FIREBASE_*` variables.
@@ -73,7 +73,7 @@ npm run dev
    npm install -g firebase-tools
    firebase login
    firebase use --add        # select your project
-   firebase deploy --only firestore:rules,firestore:indexes,storage
+   firebase deploy --only firestore:rules,firestore:indexes
    ```
    **Do not skip this step or leave the default "allow all" rules in
    place** — `firestore.rules` and `storage.rules` in this repo are what
@@ -97,6 +97,19 @@ GitHub repo → Vercel → Import Project → Environment Variables → Deploy
 4. Deploy. `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY` are only ever
    read on the server (`src/lib/firebase/admin.ts`, guarded by the
    `server-only` package) and are never sent to the browser.
+
+### Vercel Blob (file storage)
+
+1. Vercel → your project → **Storage** → **Create** → **Blob** → set access to **Private**.
+2. Connect it to the project for Production, Preview and Development. Vercel
+   adds `BLOB_READ_WRITE_TOKEN` (and `BLOB_STORE_ID`) automatically.
+3. Redeploy. No CORS or storage rules are needed.
+
+Flow: `/api/files/upload` (auth + quota reservation) → browser uploads
+directly to Blob using a token from `/api/files/upload/token` (capped at the
+reserved size, exact path only) → `/api/files/upload/complete` reconciles the
+real size. Downloads use a 60-second presigned URL minted by
+`/api/download/[token]` after all checks pass.
 
 ## 6. Project structure
 
@@ -124,7 +137,6 @@ src/
     server/                auth verification, quota transactions, tokens, audit log
   types/                   Firestore document shapes
 firestore.rules            deny-all for the client SDK — Admin SDK only
-storage.rules               scoped, ownership-checked direct-upload path
 ```
 
 ## 7. Known gaps / TODOs

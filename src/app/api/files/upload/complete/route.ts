@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { adminDb, adminBucket } from '@/lib/firebase/admin';
+import { adminDb } from '@/lib/firebase/admin';
+import { blobSize, deleteBlob } from '@/lib/server/blob';
 import { requireAuth, AuthError } from '@/lib/server/auth';
 import { reserveQuota, releaseQuota, QuotaExceededError } from '@/lib/server/quota';
 import type { FileDoc } from '@/types';
@@ -8,9 +9,9 @@ import type { FileDoc } from '@/types';
 const Schema = z.object({ fileId: z.string().min(1) });
 
 /**
- * Called by the client after it finishes writing bytes directly to Firebase
- * Storage. We never trust the size the client declared at /upload/init —
- * here we ask Storage (via the Admin SDK, server-side only) for the real
+ * Called by the client after it finishes writing bytes directly to Vercel
+ * Blob. We never trust the size the client declared at /upload/init —
+ * here we ask Storage (server-side only) for the real
  * object size and reconcile the quota reservation against it. If the actual
  * size is larger than what was reserved and pushes the user over quota, the
  * object is deleted and the upload is rejected. This is what prevents quota
@@ -31,12 +32,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'This upload was already finalized.' }, { status: 409 });
     }
 
-    const [metadata] = await adminBucket.file(doc.storagePath).getMetadata().catch(() => [null]);
-    if (!metadata || !metadata.size) {
+    const actualSize = await blobSize(doc.storagePath);
+    if (!actualSize) {
       return NextResponse.json({ error: 'Uploaded object was not found in storage.' }, { status: 404 });
     }
-
-    const actualSize = Number(metadata.size);
     const reservedSize = doc.size;
     const delta = actualSize - reservedSize;
 
@@ -45,7 +44,7 @@ export async function POST(req: NextRequest) {
         await reserveQuota(uid, delta);
       } catch (err) {
         if (err instanceof QuotaExceededError) {
-          await adminBucket.file(doc.storagePath).delete().catch(() => {});
+          await deleteBlob(doc.storagePath);
           await releaseQuota(uid, reservedSize);
           await ref.delete();
           return NextResponse.json({ error: 'Storage limit reached.' }, { status: 413 });

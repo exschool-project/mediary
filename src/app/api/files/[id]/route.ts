@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { adminDb, adminBucket } from '@/lib/firebase/admin';
+import { adminDb } from '@/lib/firebase/admin';
+import { deleteBlob } from '@/lib/server/blob';
 import { requireAuth, AuthError } from '@/lib/server/auth';
 import { releaseQuota } from '@/lib/server/quota';
 import { sanitizeDescription, sanitizeDisplayName } from '@/lib/utils';
@@ -92,7 +93,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     }
 
     if (!doc.isFolder && doc.storagePath) {
-      await adminBucket.file(doc.storagePath).delete().catch(() => {});
+      await deleteBlob(doc.storagePath);
       await releaseQuota(uid, doc.size);
     }
     await ref.delete();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { adminDb, adminBucket } from '@/lib/firebase/admin';
+import { adminDb } from '@/lib/firebase/admin';
+import { deleteBlob } from '@/lib/server/blob';
 import { requireAuth, AuthError } from '@/lib/server/auth';
 import { releaseQuota } from '@/lib/server/quota';
 import type { FileDoc } from '@/types';
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
     if (doc.ownerId !== uid) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     if (doc.status !== 'uploading') return NextResponse.json({ error: 'Already finalized.' }, { status: 409 });
 
-    await adminBucket.file(doc.storagePath).delete().catch(() => {});
+    await deleteBlob(doc.storagePath);
     await releaseQuota(uid, doc.size);
     await ref.delete();
 

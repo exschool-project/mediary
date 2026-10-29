@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { adminAuth, adminDb, adminBucket } from '@/lib/firebase/admin';
+import { adminAuth, adminDb } from '@/lib/firebase/admin';
+import { deleteBlob } from '@/lib/server/blob';
 import { requireOwner, AuthError } from '@/lib/server/auth';
 import { writeAudit } from '@/lib/server/audit';
 import type { UserDoc } from '@/types';
@@ -82,7 +83,7 @@ export async function DELETE(req: NextRequest) {
     await Promise.all(
       filesSnap.docs.map(async (d) => {
         const f = d.data() as { storagePath?: string; isFolder?: boolean };
-        if (!f.isFolder && f.storagePath) await adminBucket.file(f.storagePath).delete().catch(() => {});
+        if (!f.isFolder && f.storagePath) await deleteBlob(f.storagePath);
         await d.ref.delete();
       })
     );

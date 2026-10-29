@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { adminDb, adminBucket } from '@/lib/firebase/admin';
+import { adminDb } from '@/lib/firebase/admin';
+import { deleteBlob } from '@/lib/server/blob';
 import { requireOwner, AuthError } from '@/lib/server/auth';
 import { releaseQuota } from '@/lib/server/quota';
 import { writeAudit } from '@/lib/server/audit';
@@ -48,7 +49,7 @@ export async function DELETE(req: NextRequest) {
     const file = snap.data() as FileDoc;
 
     if (!file.isFolder && file.storagePath) {
-      await adminBucket.file(file.storagePath).delete().catch(() => {});
+      await deleteBlob(file.storagePath);
       await releaseQuota(file.ownerId, file.size);
     }
     await ref.delete();
