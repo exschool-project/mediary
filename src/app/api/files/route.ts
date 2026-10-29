@@ -13,12 +13,11 @@ export async function GET(req: NextRequest) {
     const folderId = req.nextUrl.searchParams.get('folderId');
     const trash = req.nextUrl.searchParams.get('trash') === '1';
 
-    let query = adminDb.collection('files').where('ownerId', '==', uid) as FirebaseFirestore.Query;
-    query = trash ? query.where('deletedAt', '!=', null) : query.where('deletedAt', '==', null);
-
-    const snap = await query.get();
+    // Single-field query only (no composite index needed); filter the rest here.
+    const snap = await adminDb.collection('files').where('ownerId', '==', uid).get();
     let files = snap.docs.map((d) => d.data() as FileDoc & { status?: string });
     files = files.filter((f) => f.status !== 'uploading');
+    files = files.filter((f) => (trash ? f.deletedAt != null : f.deletedAt == null));
     if (!trash) {
       files = files.filter((f) => (folderId ? f.folderId === folderId : f.folderId === null));
     }

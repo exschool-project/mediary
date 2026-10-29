@@ -22,8 +22,13 @@ export default function LoginPage() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       router.push('/dashboard');
-    } catch {
-      setError('Incorrect email or password.');
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'auth/unauthorized-domain') setError('This domain is not authorized in Firebase Auth settings.');
+      else if (code === 'auth/network-request-failed') setError('Network error. Check your connection.');
+      else if (code === 'auth/too-many-requests') setError('Too many attempts. Try again later.');
+      else if (code === 'auth/invalid-api-key') setError('Firebase API key is invalid. Check Vercel env vars.');
+      else setError('Incorrect email or password.');
     } finally {
       setLoading(false);
     }

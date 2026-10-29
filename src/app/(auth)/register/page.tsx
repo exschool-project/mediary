@@ -7,9 +7,11 @@ import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/
 import { auth } from '@/lib/firebase/client';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { isValidUsername } from '@/lib/utils';
+import { useAuth } from '@/components/auth-provider';
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { refreshProfile } = useAuth();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +43,9 @@ export default function RegisterPage() {
         setLoading(false);
         return;
       }
-      await sendEmailVerification(cred.user);
+      // onAuthStateChanged fired before the profile existed, so reload it now.
+      await refreshProfile();
+      sendEmailVerification(cred.user).catch(() => {});
       router.push('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;

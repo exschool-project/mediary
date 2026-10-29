@@ -13,10 +13,11 @@ import { formatBytes, isValidUsername } from '@/lib/utils';
 import type { FileDoc } from '@/types';
 
 export default function DashboardPage() {
-  const { firebaseUser, profile, loading, refreshProfile } = useAuth();
+  const { firebaseUser, profile, loading, profileError, refreshProfile } = useAuth();
   const router = useRouter();
   const [recent, setRecent] = useState<FileDoc[]>([]);
   const [showUpload, setShowUpload] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !firebaseUser) router.push('/login');
@@ -26,8 +27,9 @@ export default function DashboardPage() {
     try {
       const { files } = await apiFetch<{ files: FileDoc[] }>('/api/files');
       setRecent(files.sort((a, b) => b.createdAt - a.createdAt).slice(0, 6));
-    } catch {
-      // ignore
+      setFilesError(null);
+    } catch (err) {
+      setFilesError(err instanceof Error ? err.message : 'Could not load files.');
     }
   }
 
@@ -35,17 +37,28 @@ export default function DashboardPage() {
     if (profile) loadRecent();
   }, [profile]);
 
+  // The profile may have been created a moment after sign-in (e.g. right
+  // after registering). Re-check once before asking the user to create one.
+  const [rechecked, setRechecked] = useState(false);
+  useEffect(() => {
+    if (!loading && firebaseUser && !profile && !rechecked) {
+      setRechecked(true);
+      refreshProfile();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, firebaseUser, profile, rechecked]);
+
   async function handleUploaded() {
     await refreshProfile();
     await loadRecent();
   }
 
-  if (loading || !firebaseUser) {
+  if (loading || !firebaseUser || (!profile && !rechecked)) {
     return <div className="min-h-screen flex items-center justify-center text-muted">Loading…</div>;
   }
 
   if (!profile) {
-    return <CreateProfile onDone={refreshProfile} />;
+    return <CreateProfile onDone={refreshProfile} loadError={profileError} />;
   }
 
   const publicCount = 0; // computed on Files page; kept light here
@@ -60,6 +73,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="rounded-2xl border border-border bg-surface p-5">
+          {filesError && <p className="text-sm text-danger mb-3">{filesError}</p>}
           <StorageBar usedBytes={profile.usedBytes} quotaBytes={profile.quotaBytes} />
           <button
             onClick={() => setShowUpload(true)}
@@ -115,7 +129,7 @@ export default function DashboardPage() {
 
 // Shown when a user is signed in but has no Firestore profile yet (e.g. the
 // profile write failed during registration, or they signed in with Google).
-function CreateProfile({ onDone }: { onDone: () => Promise<void> }) {
+function CreateProfile({ onDone, loadError }: { onDone: () => Promise<unknown>; loadError: string | null }) {
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -132,7 +146,12 @@ function CreateProfile({ onDone }: { onDone: () => Promise<void> }) {
       await apiFetch('/api/users', { method: 'POST', body: JSON.stringify({ username }) });
       await onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not create your profile.');
+      if (err instanceof ApiError && err.status === 409 && /already exists/i.test(err.message)) {
+        // Profile is already there; just load it.
+        await onDone();
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Could not create your profile.');
+      }
     } finally {
       setBusy(false);
     }
@@ -149,7 +168,7 @@ function CreateProfile({ onDone }: { onDone: () => Promise<void> }) {
           placeholder="username"
           className="w-full rounded-lg bg-surface2 border border-border px-3 py-2 text-sm focus-ring"
         />
-        {error && <p className="text-sm text-danger">{error}</p>}
+        {(error || loadError) && <p className="text-sm text-danger">{error ?? loadError}</p>}
         <button
           type="submit"
           disabled={busy}

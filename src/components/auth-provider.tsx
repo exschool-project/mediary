@@ -10,31 +10,38 @@ interface AuthState {
   firebaseUser: User | null;
   profile: UserDoc | null;
   loading: boolean;
-  refreshProfile: () => Promise<void>;
+  profileError: string | null;
+  refreshProfile: () => Promise<UserDoc | null>;
 }
 
 const AuthContext = createContext<AuthState>({
   firebaseUser: null,
   profile: null,
   loading: true,
-  refreshProfile: async () => {},
+  profileError: null,
+  refreshProfile: async () => null,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserDoc | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
-  async function refreshProfile() {
+  async function refreshProfile(): Promise<UserDoc | null> {
     if (!auth.currentUser) {
       setProfile(null);
-      return;
+      return null;
     }
     try {
       const { user } = await apiFetch<{ user: UserDoc | null }>('/api/users');
       setProfile(user);
-    } catch {
+      setProfileError(null);
+      return user;
+    } catch (err) {
       setProfile(null);
+      setProfileError(err instanceof Error ? err.message : 'Could not load profile.');
+      return null;
     }
   }
 
@@ -52,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ firebaseUser, profile, loading, refreshProfile }}>
+    <AuthContext.Provider value={{ firebaseUser, profile, loading, profileError, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
